@@ -49,4 +49,4 @@ Click the "Classify Message" button.
 The application will display whether the message is classified as "SPAM" or "HAM".
 
 Screenshot
-![Screenshot of Streamlit App](assets/UI.png)
+![Screenshot of Streamlit App](UI.png)
