@@ -2,78 +2,85 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.naive_bayes import MultinomialNB
+import streamlit as st # Import Streamlit
 
-# --- Model Training (as done in your original Spam.py) ---
-# This part trains the model every time the script runs.
-# In a production environment, you would save and load the trained model and vectorizer.
+# Recommended requirements.txt content for this Streamlit app:
+# pandas
+# scikit-learn
+# streamlit
 
-try:
-    # Load and prepare the dataset
-    df = pd.read_csv('spam.csv', encoding='latin-1')[['v1', 'v2']]
-    df.columns = ['label', 'text']
-
-    # Normalize text to lowercase
-    df['text'] = df['text'].str.lower()
-
-    # Split the data (70% training, 30% testing)
-    # Note: X_test, y_test are not used for classification here, but needed for training setup
-    X_train, X_test, y_train, y_test = train_test_split(
-        df['text'], df['label'], test_size=0.3, random_state=42
-    )
-
-    # Vectorize the text data
-    vectorizer = CountVectorizer()
-    X_train_vec = vectorizer.fit_transform(X_train)
-    # X_test_vec = vectorizer.transform(X_test) # Not needed for training, but would be for evaluation
-
-    # Train the Multinomial Naive Bayes model
-    model = MultinomialNB()
-    model.fit(X_train_vec, y_train)
-
-    print("Model trained successfully. Ready for classification.")
-
-except FileNotFoundError:
-    print("Error: 'spam.csv' not found. Please ensure the file is in the same directory.")
-    print("Cannot proceed with classification without the dataset.")
-    exit()
-except Exception as e:
-    print(f"An error occurred during model training: {e}")
-    exit()
-
-# --- User Input and Classification ---
-def classify_message(message_text):
+# --- Model Training (cached for performance) ---
+# Use st.cache_resource to ensure the model and vectorizer are trained only once
+# when the app starts, even across user interactions.
+@st.cache_resource
+def train_model_and_vectorizer():
     """
-    Classifies a single message using the trained model.
+    Loads data, trains the Multinomial Naive Bayes model, and fits the CountVectorizer.
+    This function is cached to avoid re-training on every interaction.
     """
-    # Normalize the input message (lowercase, consistent with training)
-    normalized_message = message_text.lower()
+    try:
+        # Load and prepare the dataset
+        df = pd.read_csv('spam.csv', encoding='latin-1')[['v1', 'v2']]
+        df.columns = ['label', 'text']
 
-    # Vectorize the new message
-    # Use the *same* vectorizer that was fit on the training data
-    message_vec = vectorizer.transform([normalized_message])
+        # Normalize text to lowercase
+        df['text'] = df['text'].str.lower()
 
-    # Predict the label
-    prediction = model.predict(message_vec)
+        # Split the data (70% training, 30% testing)
+        # X_test, y_test are not used for classification here, but needed for training setup
+        X_train, _, y_train, _ = train_test_split(
+            df['text'], df['label'], test_size=0.3, random_state=42
+        )
 
-    return prediction[0] # prediction is an array, take the first element
+        # Vectorize the text data
+        vectorizer = CountVectorizer()
+        X_train_vec = vectorizer.fit_transform(X_train)
 
-if __name__ == "__main__":
-    print("\n--- SMS Spam Classifier (CLI) ---")
-    print("Type a message and press Enter to classify it. Type 'exit' to quit.")
+        # Train the Multinomial Naive Bayes model
+        model = MultinomialNB()
+        model.fit(X_train_vec, y_train)
 
-    while True:
-        user_input = input("\nEnter message: ")
-        if user_input.lower() == 'exit':
-            print("Exiting classifier. Goodbye!")
-            break
+        return model, vectorizer
 
-        if user_input.strip() == '':
-            print("Please enter some text to classify.")
-            continue
+    except FileNotFoundError:
+        st.error("Error: 'spam.csv' not found. Please ensure the file is in the same directory as the app.")
+        st.stop() # Stop the app if the file is missing
+    except Exception as e:
+        st.error(f"An error occurred during model training: {e}")
+        st.stop() # Stop the app on other training errors
 
-        classification_result = classify_message(user_input)
-        print(f"Classification: {classification_result.upper()}")
-        if classification_result == 'spam':
-            print("🚨 This message is likely SPAM! 🚨")
+# Train the model and vectorizer when the app starts
+model, vectorizer = train_model_and_vectorizer()
+
+# --- Streamlit UI ---
+st.set_page_config(page_title="SMS Spam Classifier", page_icon="✉️", layout="centered")
+
+st.title("✉️ SMS Spam Classifier")
+st.markdown("Enter a message below to classify it as 'ham' (not spam) or 'spam'.")
+
+# Text area for user input
+user_input = st.text_area("Enter your message here:", height=150, placeholder="Type your message...")
+
+# Button to trigger classification
+if st.button("Classify Message"):
+    if user_input.strip() == "":
+        st.warning("Please enter a message to classify.")
+    else:
+        # Normalize the input message (lowercase, consistent with training)
+        normalized_message = user_input.lower()
+
+        # Vectorize the new message using the trained vectorizer
+        message_vec = vectorizer.transform([normalized_message])
+
+        # Predict the label
+        prediction = model.predict(message_vec)[0] # prediction is an array, take the first element
+
+        st.subheader("Classification Result:")
+        if prediction == 'spam':
+            st.error(f"🚨 This message is likely **{prediction.upper()}**! 🚨")
         else:
-            print("✅ This message is likely HAM (not spam). ✅")
+            st.success(f"✅ This message is likely **{prediction.upper()}** (not spam). ✅")
+
+st.markdown("---")
+st.info("This classifier uses a Multinomial Naive Bayes model trained on the SMS Spam Collection Dataset.")
+
